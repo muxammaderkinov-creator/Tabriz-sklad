@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabriz Sklad — Учет материалов</title>
+    <!-- Подключаем иконки FontAwesome для красоты -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Сайдбар */
+        aside {
+            width: 260px;
+            background-color: var(--card-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--primary);
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .menu {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .menu li a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            text-decoration: none;
+            color: var(--text-muted);
+            border-radius: 8px;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+
+        .menu li.active a, .menu li a:hover {
+            background-color: #eff6ff;
+            color: var(--primary);
+        }
+
+        /* Основной контент */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 22px;
+        }
+
+        .user-info {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .content-body {
+            padding: 30px;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Карточки статистики */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        /* Панель действий */
+        .actions-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .search-input {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            width: 250px;
+            outline: none;
+        }
+
+        /* Таблицы */
+        .table-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th, td {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f8fafc;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-category {
+            background-color: #f1f5f9;
+            color: var(--text-main);
+        }
+
+        /* Модальное окно */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.4);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            outline: none;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: var(--text-main);
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Боковая навигация -->
+    <aside>
+        <div class="logo">
+            <i class="fa-solid fa-boxes-stacked"></i> Tabriz Sklad
+        </div>
+        <ul class="menu">
+            <li class="active"><a href="#"><i class="fa-solid fa-house"></i> Склад</a></li>
+            <li><a href="#" onclick="openModal('saleModal')"><i class="fa-solid fa-cart-shopping"></i> Продажа / Расход</a></li>
+        </ul>
+    </aside>
+
+    <!-- Основная часть -->
+    <main>
+        <header>
+            <h1>Учет материалов и продаж</h1>
+            <div class="user-info"><i class="fa-regular fa-user"></i> Администратор</div>
+        </header>
+
+        <div class="content-body">
+            <!-- Статистика -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Всего позиций</h3>
+                    <div class="value" id="total-items">3</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Общая стоимость склада</h3>
+                    <div class="value" id="total-cost">125,000 сум</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Сумма продаж</h3>
+                    <div class="value" id="total-sales" style="color: var(--success);">7,500 сум</div>
+                </div>
+            </div>
+
+            <!-- Действия -->
+            <div class="actions-bar">
+                <button class="btn" onclick="openModal('materialModal')"><i class="fa-solid fa-plus"></i> Добавить материал</button>
+                <input type="text" class="search-input" id="searchBox" placeholder="Поиск материала..." onkeyup="filterTable()">
+            </div>
+
+            <!-- Таблица материалов -->
+            <div class="table-container">
+                <table id="materialsTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Название материала</th>
+                            <th>Категория</th>
+                            <th>Цена за ед.</th>
+                            <th>Остаток</th>
+                        </tr>
+                    </thead>
+                    <tbody id="materialsBody">
+                        <tr>
+                            <td>1</td>
+                            <td>Металлический профиль</td>
+                            <td><span class="badge badge-category">Металл</span></td>
+                            <td>1,500 сум</td>
+                            <td>50 шт</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Краска белая акриловая</td>
+                            <td><span class="badge badge-category">Химия</span></td>
+                            <td>8,000 сум</td>
+                            <td>20 шт</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Саморезы 5x50</td>
+                            <td><span class="badge badge-category">Крепеж</span></td>
+                            <td>250 сум</td>
+                            <td>500 шт</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Модальное окно: Добавить материал -->
+    <div class="modal" id="materialModal">
+        <div class="modal-content">
+            <h2>Новый материал</h2>
+            <div class="form-group">
+                <label>Название</label>
+                <input type="text" id="matName" placeholder="Например: Труба ПВХ">
+            </div>
+            <div class="form-group">
+                <label>Категория</label>
+                <input type="text" id="matCategory" placeholder="Например: Сантехника">
+            </div>
+            <div class="form-group">
+                <label>Цена (сум)</label>
+                <input type="number" id="matPrice" placeholder="0">
+            </div>
+            <div class="form-group">
+                <label>Количество (остаток)</label>
+                <input type="number" id="matQty" placeholder="0">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('materialModal')">Отмена</button>
+                <button class="btn" onclick="addMaterial()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Продажа / Расход -->
+    <div class="modal" id="saleModal">
+        <div class="modal-content">
+            <h2>Оформить продажу / расход</h2>
+            <div class="form-group">
+                <label>Клиент</label>
+                <input type="text" id="saleClient" placeholder="Имя клиента или ООО">
+            </div>
+            <div class="form-group">
+                <label>Выберите ID материала</label>
+                <input type="number" id="saleMatId" placeholder="ID материала">
+            </div>
+            <div class="form-group">
+                <label>Количество для списания</label>
+                <input type="number" id="saleQty" placeholder="Количество">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-secondary" onclick="closeModal('saleModal')">Отмена</button>
+                <button class="btn" onclick="processSale()">Продать</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Данные склада в памяти JavaScript
+        let materials = [
+            { id: 1, name: "Металлический профиль", category: "Металл", price: 1500, qty: 50 },
+            { id: 2, name: "Краска белая акриловая", category: "Химия", price: 8000, qty: 20 },
+            { id: 3, name: "Саморезы 5x50", category: "Крепеж", price: 250, qty: 500 }
+        ];
+
+        let totalSalesSum = 0;
+
+        function renderTable() {
+            const tbody = document.getElementById('materialsBody');
+            tbody.innerHTML = '';
+            
+            let totalCostSum = 0;
+
+            materials.forEach(item => {
+                totalCostSum += item.price * item.qty;
+                const row = `<tr>
+                    <td>${item.id}</td>
+                    <td><b>${item.name}</b></td>
+                    <td><span class="badge badge-category">${item.category}</span></td>
+                    <td>${item.price.toLocaleString()} сум</td>
+                    <td>${item.qty} шт</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            document.getElementById('total-items').innerText = materials.length;
+            document.getElementById('total-cost').innerText = totalCostSum.toLocaleString() + ' сум';
+            document.getElementById('total-sales').innerText = totalSalesSum.toLocaleString() + ' сум';
+        }
+
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function addMaterial() {
+            const name = document.getElementById('matName').value;
+            const category = document.getElementById('matCategory').value;
+            const price = parseFloat(document.getElementById('matPrice').value);
+            const qty = parseInt(document.getElementById('matQty').value);
+
+            if(!name || !category || isNaN(price) || isNaN(qty)) {
+                alert('Пожалуйста, заполните все поля корректно!');
+                return;
+            }
+
+            const newId = materials.length > 0 ? materials[materials.length - 1].id + 1 : 1;
+            materials.push({ id: newId, name, category, price, qty });
+            
+            renderTable();
+            closeModal('materialModal');
+            
+            // Очистка полей
+            document.getElementById('matName').value = '';
+            document.getElementById('matCategory').value = '';
+            document.getElementById('matPrice').value = '';
+            document.getElementById('matQty').value = '';
+        }
+
+        function processSale() {
+            const client = document.getElementById('saleClient').value;
+            const matId = parseInt(document.getElementById('saleMatId').value);
+            const qty = parseInt(document.getElementById('saleQty').value);
+
+            if(!client || isNaN(matId) || isNaN(qty)) {
+                alert('Заполните все поля для продажи!');
+                return;
+            }
+
+            const item = materials.find(m => m.id === matId);
+            if(!item) {
+                alert('Материал с таким ID не найден!');
+                return;
+            }
+
+            if(item.qty < qty) {
+                alert(`Недостаточно товара на складе! Доступно: ${item.qty}`);
+                return;
+            }
+
+            item.qty -= qty;
+            const saleSum = item.price * qty;
+            totalSalesSum += saleSum;
+
+            alert(`Успешно продано клиенту "${client}"!\nСумма: ${saleSum.toLocaleString()} сум`);
+            
+            renderTable();
+            closeModal('saleModal');
+
+            document.getElementById('saleClient').value = '';
+            document.getElementById('saleMatId').value = '';
+            document.getElementById('saleQty').value = '';
+        }
+
+        function filterTable() {
+            let input = document.getElementById('searchBox').value.toLowerCase();
+            let rows = document.getElementById('materialsTable').getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+            for (let i = 0; i < rows.length; i++) {
+                let text = rows[i].innerText.toLowerCase();
+                rows[i].style.display = text.includes(input) ? '' : 'none';
+            }
+        }
+    </script>
+</body>
+</html>
