@@ -1,137 +1,591 @@
--- ========================================================
--- ЧАСТЬ 1: СОЗДАНИЕ ТАБЛИЦ БАЗЫ ДАННЫХ
--- ========================================================
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabriz sklad - Система учёта</title>
+    <style>
+        /* CSS: SQL Terminal / Dark Admin Style */
+        :root {
+            --bg-color: #1e1e2e;
+            --panel-bg: #282a36;
+            --accent-color: #50fa7b;
+            --text-color: #f8f8f2;
+            --border-color: #44475a;
+            --warning-color: #ff5555;
+            --blue-color: #8be9fd;
+        }
 
--- 1. Таблица категорий (Плитные материалы, фурнитура, кромки)
-CREATE TABLE IF NOT EXISTS categories (
-    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_name VARCHAR(100) NOT NULL UNIQUE
-);
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
 
--- 2. Таблица товаров мебельного склада
-CREATE TABLE IF NOT EXISTS products (
-    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_name VARCHAR(150) NOT NULL,
-    category_id INTEGER NOT NULL,
-    material VARCHAR(100),            -- ЛДСП 18мм, МДФ, Алюминий и т.д.
-    purchase_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,  -- Закупочная стоимость
-    selling_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,   -- Цена продажи
-    stock_quantity INT NOT NULL DEFAULT 0,                 -- Остаток на складе
-    photo_path TEXT,                  -- Путь или URL к фото товара
-    is_hot_sale BOOLEAN DEFAULT 0,    -- 1 = Горячая продажа (быстрый доступ)
-    FOREIGN KEY (category_id) REFERENCES categories(category_id)
-);
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
 
--- 3. Таблица клиентской базы
-CREATE TABLE IF NOT EXISTS clients (
-    client_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name VARCHAR(150) NOT NULL,
-    phone_number VARCHAR(30),
-    debt_amount DECIMAL(12, 2) DEFAULT 0.00  -- Задолженность клиента
-);
+        /* Боковое меню (Sidebar) */
+        sidebar {
+            width: 260px;
+            background-color: #11121d;
+            border-right: 2px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+        }
 
--- 4. Таблица учёта расходов склада
-CREATE TABLE IF NOT EXISTS warehouse_expenses (
-    expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title VARCHAR(150) NOT NULL,             -- Аренда, Свет, Логистика, ЗП
-    amount DECIMAL(12, 2) NOT NULL,
-    expense_date DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+        .logo {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 25px;
+            text-shadow: 0 0 5px rgba(80, 250, 123, 0.4);
+        }
 
--- 5. Таблица продаж (Чеки)
-CREATE TABLE IF NOT EXISTS sales (
-    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER,
-    total_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    sale_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(client_id)
-);
+        .menu-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 12px;
+            margin-bottom: 8px;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
 
--- 6. Детализация продаж (Позиции чека)
-CREATE TABLE IF NOT EXISTS sale_items (
-    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sale_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    quantity INT NOT NULL,
-    price_per_unit DECIMAL(12, 2) NOT NULL,
-    FOREIGN KEY (sale_id) REFERENCES sales(sale_id),
-    FOREIGN KEY (product_id) REFERENCES products(product_id)
-);
+        .menu-btn:hover, .menu-btn.active {
+            background-color: var(--border-color);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
 
--- 7. Таблица подвала и брендинга (Фиксированная надпись)
-CREATE TABLE IF NOT EXISTS system_branding (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    app_title VARCHAR(100) DEFAULT 'Tabriz sklad',
-    branding_footer VARCHAR(100) DEFAULT 'MUSTAFAYEV ACADEMY'
-);
+        /* Основной контент */
+        main {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            position: relative;
+            padding-bottom: 50px;
+        }
 
+        .section {
+            display: none;
+        }
 
--- ========================================================
--- ЧАСТЬ 2: НАЧАЛЬНЫЕ ДАННЫЕ И БРЕНДИНГ
--- ========================================================
+        .section.active {
+            display: block;
+        }
 
--- Категории
-INSERT INTO categories (category_name) VALUES 
-('Плитные материалы (ЛДСП / МДФ)'),
-('Мебельная фурнитура и петли'),
-('Направляющие и выдвижные системы'),
-('Кромка ПВХ и профили');
+        h2 {
+            color: var(--blue-color);
+            margin-bottom: 15px;
+            border-bottom: 1px dashed var(--border-color);
+            padding-bottom: 5px;
+        }
 
--- Брендинг
-INSERT INTO system_branding (app_title, branding_footer) 
-VALUES ('Tabriz sklad', 'MUSTAFAYEV ACADEMY');
+        /* Дашборд / Статистика склада */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
 
--- Базовый ассортимент
-INSERT INTO products (product_name, category_id, material, purchase_price, selling_price, stock_quantity, photo_path, is_hot_sale) VALUES 
-('ЛДСП 18мм Белый Базовый', 1, 'ЛДСП', 140000.00, 180000.00, 50, '/images/ldsp_white.jpg', 1),
-('Петля накладная с доводчиком 110°', 2, 'Сталь', 5000.00, 8500.00, 500, '/images/hinge_110.jpg', 1),
-('Направляющая шариковая 450мм', 3, 'Металл', 18000.00, 28000.00, 120, '/images/runner_450.jpg', 1),
-('Кромка ПВХ 2/19 Венге (м)', 4, 'ПВХ', 800.00, 1500.00, 1000, '/images/kromka_wenge.jpg', 0);
+        .stat-card {
+            background-color: var(--panel-bg);
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid var(--accent-color);
+        }
 
--- Клиенты
-INSERT INTO clients (full_name, phone_number, debt_amount) VALUES 
-('Мебельный цех "Мастер"', '+998901234567', 0.00),
-('ИП Каримов (Шкафы-купе)', '+998919876543', 250000.00);
+        .stat-card h4 { font-size: 0.8rem; opacity: 0.8; }
+        .stat-card p { font-size: 1.4rem; font-weight: bold; margin-top: 5px; color: var(--accent-color); }
 
+        /* Таблицы в стиле SQL */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: var(--panel-bg);
+            margin-top: 15px;
+            border-radius: 5px;
+            overflow: hidden;
+        }
 
--- ========================================================
--- ЧАСТЬ 3: РАБОЧИЕ ЗАПРОСЫ И ОПЕРАЦИИ (1–7)
--- ========================================================
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
 
--- 1. Добавление нового товара с фото
-INSERT INTO products (product_name, category_id, material, purchase_price, selling_price, stock_quantity, photo_path, is_hot_sale) 
-VALUES ('МДФ Шпонированный 16мм', 1, 'МДФ', 170000.00, 220000.00, 30, '/images/mdf_shpon.jpg', 1);
+        th {
+            background-color: #191a21;
+            color: var(--blue-color);
+        }
 
--- 2. Редактирование товара (цена и остаток)
-UPDATE products 
-SET purchase_price = 145000.00, 
-    selling_price = 185000.00, 
-    stock_quantity = 65 
-WHERE product_id = 1;
+        tr:hover {
+            background-color: #343746;
+        }
 
--- 3. Вывод «Горячих продаж» (Hot Sales)
-SELECT product_id, product_name, selling_price, photo_path 
-FROM products 
-WHERE is_hot_sale = 1;
+        .img-preview {
+            width: 45px;
+            height: 45px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
 
--- 4. Учёт общей стоимости склада и остатка материалов
-SELECT 
-    COUNT(product_id) AS total_positions,
-    SUM(stock_quantity) AS total_items_count,
-    SUM(purchase_price * stock_quantity) AS total_warehouse_cost_purchase,
-    SUM(selling_price * stock_quantity) AS total_warehouse_cost_sale
-FROM products;
+        /* Формы и Поля */
+        .form-group {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
 
--- 5. Регистрация расхода на складе (Аренда, Свет, ЗП)
-INSERT INTO warehouse_expenses (title, amount) 
-VALUES ('Аренда мебельного склада за месяц', 3000000.00);
+        label {
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            color: var(--blue-color);
+        }
 
--- 6. Оформление продажи с автоматическим списанием со склада
-INSERT INTO sales (client_id, total_amount) VALUES (1, 180000.00);
+        input, select {
+            background-color: #191a21;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            outline: none;
+        }
 
-UPDATE products 
-SET stock_quantity = stock_quantity - 1 
-WHERE product_id = 1;
+        input:focus, select:focus {
+            border-color: var(--accent-color);
+        }
 
--- 7. Запрос для отображения брендинга в подвале приложения
-SELECT branding_footer FROM system_branding WHERE id = 1;
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn {
+            background-color: var(--accent-color);
+            color: #000;
+            font-weight: bold;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn-danger {
+            background-color: var(--warning-color);
+            color: #fff;
+        }
+
+        /* Брендинг в правом нижнем углу */
+        .footer-branding {
+            position: fixed;
+            bottom: 10px;
+            right: 15px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 4px 8px;
+            border-radius: 3px;
+            border: 1px solid var(--border-color);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Боковое меню -->
+    <sidebar>
+        <div class="logo">> TABRIZ_SKLAD v1.0</div>
+        <button class="menu-btn active" onclick="showSection('stock')">📦 Остаток склада</button>
+        <button class="menu-btn" onclick="showSection('hot-sales')">🔥 Горячие продажи</button>
+        <button class="menu-btn" onclick="showSection('add-product')">➕ Добавить/Закупка</button>
+        <button class="menu-btn" onclick="showSection('sales')">🛒 Оформить продажу</button>
+        <button class="menu-btn" onclick="showSection('clients')">👥 Клиентская база</button>
+    </sidebar>
+
+    <!-- Основная рабочая область -->
+    <main>
+        
+        <!-- СЕКЦИЯ: ОСТАТОК И СТОИМОСТЬ СКЛАДА -->
+        <div id="sec-stock" class="section active">
+            <h2>> SELECT * FROM warehouse_summary;</h2>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h4>ОБЩАЯ СТОИМОСТЬ СКЛАДА</h4>
+                    <p id="total-warehouse-val">0 UZS</p>
+                </div>
+                <div class="stat-card">
+                    <h4>ВСЕГО ПОЗИЦИЙ</h4>
+                    <p id="total-positions">0</p>
+                </div>
+                <div class="stat-card">
+                    <h4>ОБЩЕЕ КОЛ-ВО МАТЕРИАЛОВ</h4>
+                    <p id="total-count">0 шт</p>
+                </div>
+            </div>
+
+            <h2>> SELECT * FROM products_stock;</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Фото</th>
+                        <th>ID</th>
+                        <th>Наименование</th>
+                        <th>Категория</th>
+                        <th>Материал</th>
+                        <th>Закупка</th>
+                        <th>Продажа</th>
+                        <th>Остаток</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody id="stock-table-body">
+                    <!-- Заполняется из JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- СЕКЦИЯ: ГОРЯЧИЕ ПРОДАЖИ -->
+        <div id="sec-hot-sales" class="section">
+            <h2>> SELECT * FROM products WHERE is_hot_sale = TRUE;</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Фото</th>
+                        <th>Наименование</th>
+                        <th>Цена продажи</th>
+                        <th>Остаток</th>
+                        <th>Быстрая продажа</th>
+                    </tr>
+                </thead>
+                <tbody id="hot-table-body">
+                    <!-- Заполняется из JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- СЕКЦИЯ: ДОБАВЛЕНИЕ / РЕДАКТИРОВАНИЕ ТОВАРА -->
+        <div id="sec-add-product" class="section">
+            <h2>> INSERT / UPDATE product_catalog;</h2>
+            <form id="product-form" onsubmit="saveProduct(event)" style="max-width: 600px;">
+                <input type="hidden" id="prod-id">
+                
+                <div class="form-group">
+                    <label>Наименование товара / материала:</label>
+                    <input type="text" id="prod-name" placeholder="например: ЛДСП 18мм Белый" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Категория мебельная:</label>
+                        <select id="prod-category">
+                            <option value="Плитные материалы (ЛДСП/МДФ)">Плитные материалы (ЛДСП/МДФ)</option>
+                            <option value="Фурнитура и Петли">Фурнитура и Петли</option>
+                            <option value="Направляющие">Направляющие</option>
+                            <option value="Кромка и профили">Кромка и профили</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Тип материала:</label>
+                        <input type="text" id="prod-material" placeholder="ЛДСП, МДФ, Сталь, ПВХ">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Закупочная цена (сум):</label>
+                        <input type="number" id="prod-purchase" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Цена продажи (сум):</label>
+                        <input type="number" id="prod-selling" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество (остаток):</label>
+                        <input type="number" id="prod-qty" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Ссылка на фото (URL):</label>
+                        <input type="text" id="prod-img" placeholder="https://..." value="https://via.placeholder.com/50">
+                    </div>
+                </div>
+
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="prod-hot" style="width: auto;">
+                    <label for="prod-hot" style="margin:0;">Добавить в «Горячие продажи»</label>
+                </div>
+
+                <button type="submit" class="btn">> SAVE_TO_DATABASE()</button>
+            </form>
+        </div>
+
+        <!-- СЕКЦИЯ: ПРОДАЖА -->
+        <div id="sec-sales" class="section">
+            <h2>> EXECUTE PROCEDURE process_sale();</h2>
+            <form onsubmit="processSale(event)" style="max-width: 500px;">
+                <div class="form-group">
+                    <label>Выберите мебельный товар:</label>
+                    <select id="sale-prod-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Выберите клиента:</label>
+                    <select id="sale-client-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Количество к продаже:</label>
+                    <input type="number" id="sale-qty" min="1" value="1" required>
+                </div>
+                <button type="submit" class="btn">> REGISTER_SALE()</button>
+            </form>
+        </div>
+
+        <!-- СЕКЦИЯ: КЛИЕНТСКАЯ БАЗА -->
+        <div id="sec-clients" class="section">
+            <h2>> SELECT * FROM clients_database;</h2>
+            <form onsubmit="addClient(event)" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" id="client-name" placeholder="ФИО / Название цеха" required style="flex-grow: 1;">
+                <input type="text" id="client-phone" placeholder="Телефон" required>
+                <button type="submit" class="btn" style="margin: 0;">+ Добавить</button>
+            </form>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>ФИО / Компания</th>
+                        <th>Телефон</th>
+                        <th>Задолженность</th>
+                    </tr>
+                </thead>
+                <tbody id="clients-table-body">
+                    <!-- Заполняется из JS -->
+                </tbody>
+            </table>
+        </div>
+
+    </main>
+
+    <!-- Фиксированный брендинг внизу справа -->
+    <div class="footer-branding">MUSTAFAYEV ACADEMY</div>
+
+    <!-- JavaScript: Базовый движок приложения -->
+    <script>
+        // Инициализация начальных данных (Имитация SQL БД)
+        let db = {
+            products: JSON.parse(localStorage.getItem('tb_products')) || [
+                { id: 1, name: 'ЛДСП 18мм Белый Базовый', category: 'Плитные материалы (ЛДСП/МДФ)', material: 'ЛДСП', purchase: 140000, selling: 180000, qty: 45, img: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?w=100', isHot: true },
+                { id: 2, name: 'Петля накладная с доводчиком', category: 'Фурнитура и Петли', material: 'Сталь', purchase: 5000, selling: 8500, qty: 350, img: 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?w=100', isHot: true }
+            ],
+            clients: JSON.parse(localStorage.getItem('tb_clients')) || [
+                { id: 1, name: 'Мебельный цех "Мастер"', phone: '+998901234567', debt: 0 },
+                { id: 2, name: 'ИП Каримов', phone: '+998919876543', debt: 250000 }
+            ]
+        };
+
+        function saveData() {
+            localStorage.setItem('tb_products', JSON.stringify(db.products));
+            localStorage.setItem('tb_clients', JSON.stringify(db.clients));
+            render();
+        }
+
+        // Переключение меню
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById('sec-' + sectionId).classList.add('active');
+            event.target.classList.add('active');
+            render();
+        }
+
+        // Отрисовка данных на странице
+        function render() {
+            // 1. Отрисовка остатков склада
+            const stockBody = document.getElementById('stock-table-body');
+            const saleProdSelect = document.getElementById('sale-prod-id');
+            const hotBody = document.getElementById('hot-table-body');
+            
+            stockBody.innerHTML = '';
+            saleProdSelect.innerHTML = '';
+            hotBody.innerHTML = '';
+
+            let totalVal = 0;
+            let totalItems = 0;
+
+            db.products.forEach(p => {
+                totalVal += p.purchase * p.qty;
+                totalItems += Number(p.qty);
+
+                stockBody.innerHTML += `
+                    <tr>
+                        <td><img src="${p.img}" class="img-preview" alt="photo"></td>
+                        <td>#${p.id}</td>
+                        <td><b>${p.name}</b></td>
+                        <td>${p.category}</td>
+                        <td>${p.material}</td>
+                        <td>${p.purchase.toLocaleString()}</td>
+                        <td>${p.selling.toLocaleString()}</td>
+                        <td style="color:${p.qty < 5 ? 'var(--warning-color)' : 'inherit'}"><b>${p.qty}</b></td>
+                        <td>
+                            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="editProduct(${p.id})">EDIT</button>
+                        </td>
+                    </tr>
+                `;
+
+                saleProdSelect.innerHTML += `<option value="${p.id}">${p.name} (Остаток: ${p.qty} шт)</option>`;
+
+                if (p.isHot) {
+                    hotBody.innerHTML += `
+                        <tr>
+                            <td><img src="${p.img}" class="img-preview"></td>
+                            <td><b>${p.name}</b></td>
+                            <td>${p.selling.toLocaleString()} UZS</td>
+                            <td><b>${p.qty} шт</b></td>
+                            <td><button class="btn" onclick="quickSale(${p.id})">Продать 1 шт</button></td>
+                        </tr>
+                    `;
+                }
+            });
+
+            document.getElementById('total-warehouse-val').innerText = totalVal.toLocaleString() + ' UZS';
+            document.getElementById('total-positions').innerText = db.products.length;
+            document.getElementById('total-count').innerText = totalItems + ' шт';
+
+            // 2. Отрисовка клиентов
+            const clientBody = document.getElementById('clients-table-body');
+            const saleClientSelect = document.getElementById('sale-client-id');
+            clientBody.innerHTML = '';
+            saleClientSelect.innerHTML = '';
+
+            db.clients.forEach(c => {
+                clientBody.innerHTML += `
+                    <tr>
+                        <td>#${c.id}</td>
+                        <td><b>${c.name}</b></td>
+                        <td>${c.phone}</td>
+                        <td style="color:${c.debt > 0 ? 'var(--warning-color)' : 'inherit'}">${c.debt.toLocaleString()} UZS</td>
+                    </tr>
+                `;
+                saleClientSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+        }
+
+        // Сохранение / Добавление товара
+        function saveProduct(e) {
+            e.preventDefault();
+            const id = document.getElementById('prod-id').value;
+            
+            const prodData = {
+                id: id ? Number(id) : Date.now(),
+                name: document.getElementById('prod-name').value,
+                category: document.getElementById('prod-category').value,
+                material: document.getElementById('prod-material').value,
+                purchase: Number(document.getElementById('prod-purchase').value),
+                selling: Number(document.getElementById('prod-selling').value),
+                qty: Number(document.getElementById('prod-qty').value),
+                img: document.getElementById('prod-img').value || 'https://via.placeholder.com/50',
+                isHot: document.getElementById('prod-hot').checked
+            };
+
+            if (id) {
+                const index = db.products.findIndex(p => p.id == id);
+                db.products[index] = prodData;
+            } else {
+                db.products.push(prodData);
+            }
+
+            document.getElementById('product-form').reset();
+            document.getElementById('prod-id').value = '';
+            saveData();
+            alert('Успешно сохранено!');
+        }
+
+        // Редактирование товара
+        function editProduct(id) {
+            const p = db.products.find(item => item.id === id);
+            if (!p) return;
+
+            document.getElementById('prod-id').value = p.id;
+            document.getElementById('prod-name').value = p.name;
+            document.getElementById('prod-category').value = p.category;
+            document.getElementById('prod-material').value = p.material;
+            document.getElementById('prod-purchase').value = p.purchase;
+            document.getElementById('prod-selling').value = p.selling;
+            document.getElementById('prod-qty').value = p.qty;
+            document.getElementById('prod-img').value = p.img;
+            document.getElementById('prod-hot').checked = p.isHot;
+
+            showSection('add-product');
+        }
+
+        // Добавление нового клиента
+        function addClient(e) {
+            e.preventDefault();
+            db.clients.push({
+                id: Date.now(),
+                name: document.getElementById('client-name').value,
+                phone: document.getElementById('client-phone').value,
+                debt: 0
+            });
+            document.getElementById('client-name').value = '';
+            document.getElementById('client-phone').value = '';
+            saveData();
+        }
+
+        // Оформление продажи
+        function processSale(e) {
+            e.preventDefault();
+            const pId = Number(document.getElementById('sale-prod-id').value);
+            const qty = Number(document.getElementById('sale-qty').value);
+            
+            const prod = db.products.find(p => p.id === pId);
+            if (prod.qty < qty) {
+                alert(' Ошибка: На складе недостаточно товара!');
+                return;
+            }
+
+            prod.qty -= qty;
+            saveData();
+            alert('Продажа успешно совершена!');
+        }
+
+        // Быстрая продажа 1 шт из "Горячих"
+        function quickSale(id) {
+            const prod = db.products.find(p => p.id === id);
+            if (prod.qty < 1) {
+                alert('Товар закончился!');
+                return;
+            }
+            prod.qty -= 1;
+            saveData();
+        }
+
+        // Первый запуск
+        render();
+    </script>
+</body>
+</html>
