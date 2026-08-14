@@ -1,490 +1,137 @@
-import os
-import sqlite3
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-from PIL import Image, ImageTk
-
-class TabrizSkladApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Tabriz sklad — Учёт мебельного склада")
-        self.root.geometry("1200x750")
-        self.root.minsize(1000, 650)
-
-        # Стилистика приложения
-        self.style = ttk.Style()
-        self.style.theme_use("clam")
-        self.configure_styles()
-
-        # Инициализация БД
-        self.init_db()
-
-        # Главный контейнер
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Создание основных модулей/вкладок
-        self.create_sales_tab()        # Горячие продажи и касса
-        self.create_inventory_tab()    # Склад, товары, фото, остатки
-        self.create_expenses_tab()     # Учёт расходов склада
-        self.create_clients_tab()      # Клиентская база
-
-        # Фиксированный подвал (Footer)
-        self.create_footer()
-
-        # Загрузка первичных данных
-        self.refresh_categories_combo()
-        self.refresh_inventory_tree()
-        self.update_warehouse_stats()
-        self.refresh_expenses_tree()
-        self.refresh_clients_tree()
-
-    def configure_styles(self):
-        self.style.configure("TNotebook", background="#f5f6fa")
-        self.style.configure("TNotebook.Tab", font=("Segoe UI", 10, "bold"), padding=[12, 8])
-        self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=28)
-        self.style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#dcdde1")
-
-    def init_db(self):
-        self.conn = sqlite3.connect("tabriz_sklad.db")
-        self.cursor = self.conn.cursor()
-        
-        # Схема базы данных для мебельного склада
-        self.cursor.executescript("""
-        CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            category TEXT NOT NULL,
-            material TEXT,
-            purchase_price REAL DEFAULT 0,
-            selling_price REAL DEFAULT 0,
-            stock INT DEFAULT 0,
-            photo_path TEXT,
-            is_hot INT DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            category TEXT,
-            amount REAL NOT NULL,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS clients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            full_name TEXT NOT NULL,
-            phone TEXT,
-            debt REAL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS sales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_name TEXT,
-            total_amount REAL,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-
-        # Базовые категории мебельного склада
-        default_categories = [
-            ("Плитные материалы (ЛДСП/МДФ/ДВП)",),
-            ("Мебельная фурнитура и петли",),
-            ("Направляющие и системы выдвижения",),
-            ("Кромка ПВХ и профили",),
-            ("Фасады и стёкла",),
-            ("Готовые изделия",)
-        ]
-        self.cursor.executemany("INSERT OR IGNORE INTO categories (name) VALUES (?)", default_categories)
-        self.conn.commit()
-
-    # ==========================================
-    # 1. ВКЛАДКА: ГОРЯЧИЕ ПРОДАЖИ И КАССА
-    # ==========================================
-    def create_sales_tab(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="🔥 Горячие продажи и Касса")
-
-        # Левая часть: Панель быстрых товаров
-        left_frame = ttk.LabelFrame(tab, text="Быстрый выбор (Горячие позиции)")
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Быстрые кнопки мебельных материалов
-        hot_items = [
-            ("ЛДСП Белый 18мм (Лист)", 180000),
-            ("Петля с доводчиком 110°", 8500),
-            ("Направляющая шариковая 450мм", 28000),
-            ("Кромка ПВХ 2/19 Венге (м)", 1500),
-            ("МДФ Шпонированный 16мм", 220000),
-            ("Подъёмный механизм GTV", 95000),
-            ("Конфирмат 7х50 (уп. 100 шт)", 12000),
-            ("Ручка-скоба черная 128мм", 14000)
-        ]
-
-        r, c = 0, 0
-        for name, price in hot_items:
-            btn = tk.Button(
-                left_frame, 
-                text=f"{name}\n{price:,.0f} UZS", 
-                bg="#e1f5fe", fg="#0277bd",
-                font=("Segoe UI", 9, "bold"),
-                relief=tk.GROOVE, bd=2,
-                command=lambda n=name, p=price: self.add_to_cart(n, p)
-            )
-            btn.grid(row=r, column=c, sticky="nsew", padx=6, pady=6)
-            left_frame.grid_columnconfigure(c, weight=1)
-            left_frame.grid_rowconfigure(r, weight=1)
-            c += 1
-            if c > 2:
-                c = 0
-                r += 1
-
-        # Правая часть: Корзина / Чек
-        right_frame = ttk.LabelFrame(tab, text="Текущий чек")
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=10, pady=10)
-        right_frame.config(width=380)
-
-        cols = ("Товар", "Кол-во", "Сумма")
-        self.cart_tree = ttk.Treeview(right_frame, columns=cols, show="headings", height=14)
-        self.cart_tree.heading("Товар", text="Товар")
-        self.cart_tree.heading("Кол-во", text="Кол-во")
-        self.cart_tree.heading("Сумма", text="Сумма")
-        self.cart_tree.column("Товар", width=160)
-        self.cart_tree.column("Кол-во", width=60, anchor="center")
-        self.cart_tree.column("Сумма", width=100, anchor="e")
-        self.cart_tree.pack(fill=tk.BOTH, padx=5, pady=5, expand=True)
-
-        self.lbl_cart_total = tk.Label(right_frame, text="Итого: 0 UZS", font=("Segoe UI", 12, "bold"), fg="#2e7d32")
-        self.lbl_cart_total.pack(anchor="e", padx=10, pady=5)
-
-        btn_pay = tk.Button(
-            right_frame, text="💳 Завершить продажу", 
-            bg="#2e7d32", fg="white", font=("Segoe UI", 11, "bold"),
-            pady=8, command=self.process_sale
-        )
-        btn_pay.pack(fill=tk.X, padx=5, pady=10)
-
-        self.cart = {}
-
-    def add_to_cart(self, name, price):
-        if name in self.cart:
-            self.cart[name]['qty'] += 1
-            self.cart[name]['total'] += price
-        else:
-            self.cart[name] = {'price': price, 'qty': 1, 'total': price}
-        self.refresh_cart_tree()
-
-    def refresh_cart_tree(self):
-        for item in self.cart_tree.get_children():
-            self.cart_tree.delete(item)
-        grand_total = 0
-        for name, data in self.cart.items():
-            self.cart_tree.insert("", tk.END, values=(name, data['qty'], f"{data['total']:,.0f}"))
-            grand_total += data['total']
-        self.lbl_cart_total.config(text=f"Итого: {grand_total:,.0f} UZS")
-
-    def process_sale(self):
-        if not self.cart:
-            messagebox.showwarning("Внимание", "Корзина пуста!")
-            return
-        total = sum(item['total'] for item in self.cart.values())
-        self.cursor.execute("INSERT INTO sales (client_name, total_amount) VALUES (?, ?)", ("Розничный покупатель", total))
-        self.conn.commit()
-        messagebox.showinfo("Успех", f"Продажа оформлена на сумму {total:,.0f} UZS!")
-        self.cart.clear()
-        self.refresh_cart_tree()
-
-    # ==========================================
-    # 2. ВКЛАДКА: СКЛАД, ОСТАТКИ И ФОТО
-    # ==========================================
-    def create_inventory_tab(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="📦 Склад и Остатки")
-
-        # Информационная панель стоимости склада
-        info_panel = tk.Frame(tab, bg="#1e272e", padding=10)
-        info_panel.pack(fill=tk.X, padx=10, pady=5)
-
-        self.lbl_stock_value = tk.Label(
-            info_panel, text="Стоимость склада (Закуп): 0 UZS | Всего единиц: 0", 
-            bg="#1e272e", fg="#00d2d3", font=("Segoe UI", 11, "bold")
-        )
-        self.lbl_stock_value.pack(side=tk.LEFT, padx=10)
-
-        btn_add = tk.Button(
-            info_panel, text="+ Добавить товар", bg="#0984e3", fg="white",
-            font=("Segoe UI", 10, "bold"), bd=0, padx=15, pady=5,
-            command=self.open_add_product_dialog
-        )
-        btn_add.pack(side=tk.RIGHT, padx=10)
-
-        btn_edit = tk.Button(
-            info_panel, text="✏️ Редактировать", bg="#fdcb6e", fg="#2d3436",
-            font=("Segoe UI", 10, "bold"), bd=0, padx=15, pady=5,
-            command=self.open_edit_product_dialog
-        )
-        btn_edit.pack(side=tk.RIGHT, padx=5)
-
-        # Основная таблица остатков
-        cols = ("ID", "Наименование", "Категория", "Материал", "Закуп (UZS)", "Продажа (UZS)", "Остаток")
-        self.inventory_tree = ttk.Treeview(tab, columns=cols, show="headings")
-        for c in cols:
-            self.inventory_tree.heading(c, text=c)
-            self.inventory_tree.column(c, width=110 if "UZS" in c or c == "ID" else 160)
-        self.inventory_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-    def refresh_inventory_tree(self):
-        for item in self.inventory_tree.get_children():
-            self.inventory_tree.delete(item)
-        self.cursor.execute("SELECT id, name, category, material, purchase_price, selling_price, stock FROM products")
-        for row in self.cursor.fetchall():
-            formatted_row = list(row)
-            formatted_row[4] = f"{row[4]:,.0f}"
-            formatted_row[5] = f"{row[5]:,.0f}"
-            self.inventory_tree.insert("", tk.END, values=formatted_row)
-
-    def update_warehouse_stats(self):
-        self.cursor.execute("SELECT SUM(purchase_price * stock), SUM(stock) FROM products")
-        res = self.cursor.fetchone()
-        val = res[0] if res[0] else 0
-        qty = res[1] if res[1] else 0
-        self.lbl_stock_value.config(text=f"Стоимость склада (Закуп): {val:,.0f} UZS | Всего остаток: {qty} шт/ед.")
-
-    def open_add_product_dialog(self):
-        self.product_dialog(title="Добавить товар на склад")
-
-    def open_edit_product_dialog(self):
-        selected = self.inventory_tree.selection()
-        if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар из таблицы для редактирования!")
-            return
-        prod_id = self.inventory_tree.item(selected[0])['values'][0]
-        self.product_dialog(title="Редактировать товар", edit_id=prod_id)
-
-    def product_dialog(self, title, edit_id=None):
-        dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        dialog.geometry("420x580")
-        dialog.grab_set()
-
-        photo_path_var = tk.StringVar()
-
-        ttk.Label(dialog, text="Наименование товара:").pack(anchor="w", padx=15, pady=2)
-        entry_name = ttk.Entry(dialog)
-        entry_name.pack(fill=tk.X, padx=15, pady=2)
-
-        ttk.Label(dialog, text="Категория:").pack(anchor="w", padx=15, pady=2)
-        combo_cat = ttk.Combobox(dialog, values=self.get_categories_list())
-        combo_cat.pack(fill=tk.X, padx=15, pady=2)
-
-        ttk.Label(dialog, text="Материал (например, ЛДСП 18мм, МДФ, Металл):").pack(anchor="w", padx=15, pady=2)
-        entry_mat = ttk.Entry(dialog)
-        entry_mat.pack(fill=tk.X, padx=15, pady=2)
-
-        ttk.Label(dialog, text="Закупочная цена (UZS):").pack(anchor="w", padx=15, pady=2)
-        entry_pur = ttk.Entry(dialog)
-        entry_pur.pack(fill=tk.X, padx=15, pady=2)
-
-        ttk.Label(dialog, text="Цена продажи (UZS):").pack(anchor="w", padx=15, pady=2)
-        entry_sell = ttk.Entry(dialog)
-        entry_sell.pack(fill=tk.X, padx=15, pady=2)
-
-        ttk.Label(dialog, text="Количество на складе:").pack(anchor="w", padx=15, pady=2)
-        entry_stock = ttk.Entry(dialog)
-        entry_stock.pack(fill=tk.X, padx=15, pady=2)
-
-        lbl_photo = ttk.Label(dialog, text="Фото не выбрано", foreground="gray")
-        
-        def choose_photo():
-            f = filedialog.askopenfilename(filetypes=[("Изображения", "*.png;*.jpg;*.jpeg")])
-            if f:
-                photo_path_var.set(f)
-                lbl_photo.config(text=os.path.basename(f), foreground="green")
-
-        btn_ph = ttk.Button(dialog, text="📷 Прикрепить фото товара", command=choose_photo)
-        btn_ph.pack(padx=15, pady=5)
-        lbl_photo.pack()
-
-        # Предзаполнение данных при редактировании
-        if edit_id:
-            self.cursor.execute("SELECT name, category, material, purchase_price, selling_price, stock, photo_path FROM products WHERE id=?", (edit_id,))
-            data = self.cursor.fetchone()
-            if data:
-                entry_name.insert(0, data[0])
-                combo_cat.set(data[1])
-                entry_mat.insert(0, data[2] or "")
-                entry_pur.insert(0, str(data[3]))
-                entry_sell.insert(0, str(data[4]))
-                entry_stock.insert(0, str(data[5]))
-                if data[6]:
-                    photo_path_var.set(data[6])
-                    lbl_photo.config(text=os.path.basename(data[6]), foreground="green")
-
-        def save():
-            name = entry_name.get()
-            cat = combo_cat.get()
-            mat = entry_mat.get()
-            pur = float(entry_pur.get() or 0)
-            sell = float(entry_sell.get() or 0)
-            stk = int(entry_stock.get() or 0)
-            photo = photo_path_var.get()
-
-            if not name:
-                messagebox.showwarning("Ошибка", "Заполните название!")
-                return
-
-            if edit_id:
-                self.cursor.execute("""
-                UPDATE products SET name=?, category=?, material=?, purchase_price=?, selling_price=?, stock=?, photo_path=?
-                WHERE id=?
-                """, (name, cat, mat, pur, sell, stk, photo, edit_id))
-            else:
-                self.cursor.execute("""
-                INSERT INTO products (name, category, material, purchase_price, selling_price, stock, photo_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (name, cat, mat, pur, sell, stk, photo))
-
-            self.conn.commit()
-            self.refresh_inventory_tree()
-            self.update_warehouse_stats()
-            dialog.destroy()
-
-        btn_save = tk.Button(dialog, text="Сохранить", bg="#2e7d32", fg="white", font=("Segoe UI", 10, "bold"), command=save)
-        btn_save.pack(fill=tk.X, padx=15, pady=15)
-
-    def get_categories_list(self):
-        self.cursor.execute("SELECT name FROM categories")
-        return [r[0] for r in self.cursor.fetchall()]
-
-    def refresh_categories_combo(self):
-        pass
-
-    # ==========================================
-    # 3. ВКЛАДКА: РАСХОДЫ СКЛАДА
-    # ==========================================
-    def create_expenses_tab(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="💸 Расходы склада")
-
-        top = ttk.Frame(tab)
-        top.pack(fill=tk.X, padx=10, pady=10)
-
-        btn_exp = tk.Button(top, text="+ Добавить расход", bg="#e17055", fg="white", font=("Segoe UI", 10, "bold"), command=self.add_expense_dialog)
-        btn_exp.pack(side=tk.LEFT)
-
-        cols = ("ID", "Статья расхода", "Сумма (UZS)", "Дата")
-        self.expenses_tree = ttk.Treeview(tab, columns=cols, show="headings")
-        for c in cols:
-            self.expenses_tree.heading(c, text=c)
-        self.expenses_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-    def refresh_expenses_tree(self):
-        for item in self.expenses_tree.get_children():
-            self.expenses_tree.delete(item)
-        self.cursor.execute("SELECT id, title, amount, date FROM expenses")
-        for row in self.cursor.fetchall():
-            self.expenses_tree.insert("", tk.END, values=(row[0], row[1], f"{row[2]:,.0f}", row[3]))
-
-    def add_expense_dialog(self):
-        d = tk.Toplevel(self.root)
-        d.title("Добавить расход")
-        d.geometry("300x220")
-
-        ttk.Label(d, text="Статья затрат (Аренда/Свет/ЗП):").pack(padx=10, pady=2, anchor="w")
-        e_title = ttk.Entry(d)
-        e_title.pack(fill=tk.X, padx=10, pady=2)
-
-        ttk.Label(d, text="Сумма (UZS):").pack(padx=10, pady=2, anchor="w")
-        e_amt = ttk.Entry(d)
-        e_amt.pack(fill=tk.X, padx=10, pady=2)
-
-        def save():
-            t = e_title.get()
-            a = float(e_amt.get() or 0)
-            if t and a:
-                self.cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (t, a))
-                self.conn.commit()
-                self.refresh_expenses_tree()
-                d.destroy()
-
-        tk.Button(d, text="Сохранить", bg="#2e7d32", fg="white", command=save).pack(pady=15)
-
-    # ==========================================
-    # 4. ВКЛАДКА: КЛИЕНТСКАЯ БАЗА
-    # ==========================================
-    def create_clients_tab(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="👥 Клиентская база")
-
-        top = ttk.Frame(tab)
-        top.pack(fill=tk.X, padx=10, pady=10)
-
-        btn_cl = tk.Button(top, text="+ Добавить клиента", bg="#00b894", fg="white", font=("Segoe UI", 10, "bold"), command=self.add_client_dialog)
-        btn_cl.pack(side=tk.LEFT)
-
-        cols = ("ID", "ФИО Клиента / Заказчик", "Телефон", "Долг / Задолженность (UZS)")
-        self.clients_tree = ttk.Treeview(tab, columns=cols, show="headings")
-        for c in cols:
-            self.clients_tree.heading(c, text=c)
-        self.clients_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-    def refresh_clients_tree(self):
-        for item in self.clients_tree.get_children():
-            self.clients_tree.delete(item)
-        self.cursor.execute("SELECT id, full_name, phone, debt FROM clients")
-        for row in self.cursor.fetchall():
-            self.clients_tree.insert("", tk.END, values=(row[0], row[1], row[2], f"{row[3]:,.0f}"))
-
-    def add_client_dialog(self):
-        d = tk.Toplevel(self.root)
-        d.title("Добавить клиента")
-        d.geometry("320x240")
-
-        ttk.Label(d, text="ФИО / Название мебельного цеха:").pack(padx=10, pady=2, anchor="w")
-        e_name = ttk.Entry(d)
-        e_name.pack(fill=tk.X, padx=10, pady=2)
-
-        ttk.Label(d, text="Телефон:").pack(padx=10, pady=2, anchor="w")
-        e_phone = ttk.Entry(d)
-        e_phone.pack(fill=tk.X, padx=10, pady=2)
-
-        def save():
-            n = e_name.get()
-            p = e_phone.get()
-            if n:
-                self.cursor.execute("INSERT INTO clients (full_name, phone) VALUES (?, ?)", (n, p))
-                self.conn.commit()
-                self.refresh_clients_tree()
-                d.destroy()
-
-        tk.Button(d, text="Сохранить", bg="#2e7d32", fg="white", command=save).pack(pady=15)
-
-    # ==========================================
-    # 5. НИЖНЯЯ ПАНЕЛЬ (MUSTAFAYEV ACADEMY)
-    # ==========================================
-    def create_footer(self):
-        footer = tk.Frame(self.root, bg="#1e272e", height=32)
-        footer.pack(fill=tk.X, side=tk.BOTTOM)
-
-        lbl_status = tk.Label(footer, text="● Система готова | Склад: Мебельная структура", bg="#1e272e", fg="#00d2d3", font=("Segoe UI", 9))
-        lbl_status.pack(side=tk.LEFT, padx=12)
-
-        # Обязательная подпись в правом нижнем углу
-        lbl_brand = tk.Label(
-            footer, 
-            text="MUSTAFAYEV ACADEMY", 
-            bg="#1e272e", 
-            fg="#fbc531", 
-            font=("Segoe UI", 10, "bold")
-        )
-        lbl_brand.pack(side=tk.RIGHT, padx=15, pady=4)
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = TabrizSkladApp(root)
-    root.mainloop()
+-- ========================================================
+-- ЧАСТЬ 1: СОЗДАНИЕ ТАБЛИЦ БАЗЫ ДАННЫХ
+-- ========================================================
+
+-- 1. Таблица категорий (Плитные материалы, фурнитура, кромки)
+CREATE TABLE IF NOT EXISTS categories (
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- 2. Таблица товаров мебельного склада
+CREATE TABLE IF NOT EXISTS products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_name VARCHAR(150) NOT NULL,
+    category_id INTEGER NOT NULL,
+    material VARCHAR(100),            -- ЛДСП 18мм, МДФ, Алюминий и т.д.
+    purchase_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,  -- Закупочная стоимость
+    selling_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,   -- Цена продажи
+    stock_quantity INT NOT NULL DEFAULT 0,                 -- Остаток на складе
+    photo_path TEXT,                  -- Путь или URL к фото товара
+    is_hot_sale BOOLEAN DEFAULT 0,    -- 1 = Горячая продажа (быстрый доступ)
+    FOREIGN KEY (category_id) REFERENCES categories(category_id)
+);
+
+-- 3. Таблица клиентской базы
+CREATE TABLE IF NOT EXISTS clients (
+    client_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name VARCHAR(150) NOT NULL,
+    phone_number VARCHAR(30),
+    debt_amount DECIMAL(12, 2) DEFAULT 0.00  -- Задолженность клиента
+);
+
+-- 4. Таблица учёта расходов склада
+CREATE TABLE IF NOT EXISTS warehouse_expenses (
+    expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title VARCHAR(150) NOT NULL,             -- Аренда, Свет, Логистика, ЗП
+    amount DECIMAL(12, 2) NOT NULL,
+    expense_date DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. Таблица продаж (Чеки)
+CREATE TABLE IF NOT EXISTS sales (
+    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER,
+    total_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    sale_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+);
+
+-- 6. Детализация продаж (Позиции чека)
+CREATE TABLE IF NOT EXISTS sale_items (
+    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity INT NOT NULL,
+    price_per_unit DECIMAL(12, 2) NOT NULL,
+    FOREIGN KEY (sale_id) REFERENCES sales(sale_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+
+-- 7. Таблица подвала и брендинга (Фиксированная надпись)
+CREATE TABLE IF NOT EXISTS system_branding (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_title VARCHAR(100) DEFAULT 'Tabriz sklad',
+    branding_footer VARCHAR(100) DEFAULT 'MUSTAFAYEV ACADEMY'
+);
+
+
+-- ========================================================
+-- ЧАСТЬ 2: НАЧАЛЬНЫЕ ДАННЫЕ И БРЕНДИНГ
+-- ========================================================
+
+-- Категории
+INSERT INTO categories (category_name) VALUES 
+('Плитные материалы (ЛДСП / МДФ)'),
+('Мебельная фурнитура и петли'),
+('Направляющие и выдвижные системы'),
+('Кромка ПВХ и профили');
+
+-- Брендинг
+INSERT INTO system_branding (app_title, branding_footer) 
+VALUES ('Tabriz sklad', 'MUSTAFAYEV ACADEMY');
+
+-- Базовый ассортимент
+INSERT INTO products (product_name, category_id, material, purchase_price, selling_price, stock_quantity, photo_path, is_hot_sale) VALUES 
+('ЛДСП 18мм Белый Базовый', 1, 'ЛДСП', 140000.00, 180000.00, 50, '/images/ldsp_white.jpg', 1),
+('Петля накладная с доводчиком 110°', 2, 'Сталь', 5000.00, 8500.00, 500, '/images/hinge_110.jpg', 1),
+('Направляющая шариковая 450мм', 3, 'Металл', 18000.00, 28000.00, 120, '/images/runner_450.jpg', 1),
+('Кромка ПВХ 2/19 Венге (м)', 4, 'ПВХ', 800.00, 1500.00, 1000, '/images/kromka_wenge.jpg', 0);
+
+-- Клиенты
+INSERT INTO clients (full_name, phone_number, debt_amount) VALUES 
+('Мебельный цех "Мастер"', '+998901234567', 0.00),
+('ИП Каримов (Шкафы-купе)', '+998919876543', 250000.00);
+
+
+-- ========================================================
+-- ЧАСТЬ 3: РАБОЧИЕ ЗАПРОСЫ И ОПЕРАЦИИ (1–7)
+-- ========================================================
+
+-- 1. Добавление нового товара с фото
+INSERT INTO products (product_name, category_id, material, purchase_price, selling_price, stock_quantity, photo_path, is_hot_sale) 
+VALUES ('МДФ Шпонированный 16мм', 1, 'МДФ', 170000.00, 220000.00, 30, '/images/mdf_shpon.jpg', 1);
+
+-- 2. Редактирование товара (цена и остаток)
+UPDATE products 
+SET purchase_price = 145000.00, 
+    selling_price = 185000.00, 
+    stock_quantity = 65 
+WHERE product_id = 1;
+
+-- 3. Вывод «Горячих продаж» (Hot Sales)
+SELECT product_id, product_name, selling_price, photo_path 
+FROM products 
+WHERE is_hot_sale = 1;
+
+-- 4. Учёт общей стоимости склада и остатка материалов
+SELECT 
+    COUNT(product_id) AS total_positions,
+    SUM(stock_quantity) AS total_items_count,
+    SUM(purchase_price * stock_quantity) AS total_warehouse_cost_purchase,
+    SUM(selling_price * stock_quantity) AS total_warehouse_cost_sale
+FROM products;
+
+-- 5. Регистрация расхода на складе (Аренда, Свет, ЗП)
+INSERT INTO warehouse_expenses (title, amount) 
+VALUES ('Аренда мебельного склада за месяц', 3000000.00);
+
+-- 6. Оформление продажи с автоматическим списанием со склада
+INSERT INTO sales (client_id, total_amount) VALUES (1, 180000.00);
+
+UPDATE products 
+SET stock_quantity = stock_quantity - 1 
+WHERE product_id = 1;
+
+-- 7. Запрос для отображения брендинга в подвале приложения
+SELECT branding_footer FROM system_branding WHERE id = 1;
