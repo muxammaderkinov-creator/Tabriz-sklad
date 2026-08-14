@@ -2,10 +2,14 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Tabriz sklad - Система учёта</title>
+    
+    <!-- Подключение Firebase через CDN ссылки -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
     <style>
-        /* CSS: SQL Terminal / Dark Admin Style */
         :root {
             --bg-color: #1e1e2e;
             --panel-bg: #282a36;
@@ -20,33 +24,41 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Consolas', 'Courier New', monospace;
+            font-family: 'Consolas', 'Segoe UI', monospace;
         }
 
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
             display: flex;
+            flex-direction: column;
             height: 100vh;
             overflow: hidden;
         }
 
-        /* Боковое меню (Sidebar) */
+        /* Адаптивность под ПК и Мобильные */
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            sidebar { width: 260px; height: 100vh; }
+            main { flex-grow: 1; height: 100vh; }
+        }
+
         sidebar {
-            width: 260px;
             background-color: #11121d;
             border-right: 2px solid var(--border-color);
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            padding: 15px;
+            gap: 8px;
+            overflow-x: auto;
         }
 
         .logo {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: bold;
             color: var(--accent-color);
-            margin-bottom: 25px;
-            text-shadow: 0 0 5px rgba(80, 250, 123, 0.4);
+            margin-bottom: 10px;
+            white-space: nowrap;
         }
 
         .menu-btn {
@@ -54,11 +66,11 @@
             border: 1px solid var(--border-color);
             color: var(--text-color);
             padding: 12px;
-            margin-bottom: 8px;
             text-align: left;
             cursor: pointer;
-            border-radius: 4px;
-            transition: all 0.2s;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            white-space: nowrap;
         }
 
         .menu-btn:hover, .menu-btn.active {
@@ -67,135 +79,104 @@
             color: var(--accent-color);
         }
 
-        /* Основной контент */
         main {
-            flex-grow: 1;
-            padding: 20px;
+            padding: 15px;
             overflow-y: auto;
             position: relative;
-            padding-bottom: 50px;
+            padding-bottom: 60px;
         }
 
-        .section {
-            display: none;
-        }
-
-        .section.active {
-            display: block;
-        }
+        .section { display: none; }
+        .section.active { display: block; }
 
         h2 {
             color: var(--blue-color);
             margin-bottom: 15px;
+            font-size: 1.1rem;
             border-bottom: 1px dashed var(--border-color);
             padding-bottom: 5px;
         }
 
-        /* Дашборд / Статистика склада */
+        /* Сетка показателей */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
             margin-bottom: 20px;
         }
 
         .stat-card {
             background-color: var(--panel-bg);
-            padding: 15px;
-            border-radius: 5px;
+            padding: 12px;
+            border-radius: 6px;
             border-left: 4px solid var(--accent-color);
         }
 
-        .stat-card h4 { font-size: 0.8rem; opacity: 0.8; }
-        .stat-card p { font-size: 1.4rem; font-weight: bold; margin-top: 5px; color: var(--accent-color); }
+        .stat-card h4 { font-size: 0.75rem; opacity: 0.8; }
+        .stat-card p { font-size: 1.2rem; font-weight: bold; margin-top: 5px; color: var(--accent-color); }
 
-        /* Таблицы в стиле SQL */
+        /* Таблицы с горизонтальным скроллом для телефонов */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
             background-color: var(--panel-bg);
-            margin-top: 15px;
-            border-radius: 5px;
-            overflow: hidden;
+            border-radius: 6px;
+            min-width: 600px;
         }
 
         th, td {
-            padding: 10px 12px;
+            padding: 10px;
             text-align: left;
             border-bottom: 1px solid var(--border-color);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
-        th {
-            background-color: #191a21;
-            color: var(--blue-color);
-        }
-
-        tr:hover {
-            background-color: #343746;
-        }
+        th { background-color: #191a21; color: var(--blue-color); }
 
         .img-preview {
-            width: 45px;
-            height: 45px;
+            width: 40px;
+            height: 40px;
             object-fit: cover;
             border-radius: 4px;
-            border: 1px solid var(--border-color);
         }
 
-        /* Формы и Поля */
+        /* Элементы форм */
         .form-group {
             margin-bottom: 12px;
             display: flex;
             flex-direction: column;
         }
 
-        label {
-            font-size: 0.85rem;
-            margin-bottom: 4px;
-            color: var(--blue-color);
-        }
+        label { font-size: 0.8rem; margin-bottom: 4px; color: var(--blue-color); }
 
         input, select {
             background-color: #191a21;
             border: 1px solid var(--border-color);
             color: #fff;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
             outline: none;
-        }
-
-        input:focus, select:focus {
-            border-color: var(--accent-color);
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
         }
 
         .btn {
             background-color: var(--accent-color);
             color: #000;
             font-weight: bold;
-            padding: 10px 15px;
+            padding: 12px 15px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
+            width: 100%;
             margin-top: 10px;
         }
 
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .btn-danger {
-            background-color: var(--warning-color);
-            color: #fff;
-        }
-
-        /* Брендинг в правом нижнем углу */
+        /* Брендинг */
         .footer-branding {
             position: fixed;
             bottom: 10px;
@@ -203,389 +184,269 @@
             font-size: 0.75rem;
             font-weight: bold;
             color: var(--accent-color);
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 4px 8px;
-            border-radius: 3px;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 5px 10px;
+            border-radius: 4px;
             border: 1px solid var(--border-color);
-            pointer-events: none;
+            z-index: 999;
         }
     </style>
 </head>
 <body>
 
-    <!-- Боковое меню -->
     <sidebar>
-        <div class="logo">> TABRIZ_SKLAD v1.0</div>
-        <button class="menu-btn active" onclick="showSection('stock')">📦 Остаток склада</button>
-        <button class="menu-btn" onclick="showSection('hot-sales')">🔥 Горячие продажи</button>
-        <button class="menu-btn" onclick="showSection('add-product')">➕ Добавить/Закупка</button>
-        <button class="menu-btn" onclick="showSection('sales')">🛒 Оформить продажу</button>
-        <button class="menu-btn" onclick="showSection('clients')">👥 Клиентская база</button>
+        <div class="logo">> TABRIZ_SKLAD [ONLINE]</div>
+        <button class="menu-btn active" onclick="showSection('stock', event)">📦 Остаток склада</button>
+        <button class="menu-btn" onclick="showSection('hot-sales', event)">🔥 Горячие продажи</button>
+        <button class="menu-btn" onclick="showSection('add-product', event)">➕ Добавить/Закупка</button>
+        <button class="menu-btn" onclick="showSection('sales', event)">🛒 Продажа</button>
+        <button class="menu-btn" onclick="showSection('clients', event)">👥 Клиентская база</button>
     </sidebar>
 
-    <!-- Основная рабочая область -->
     <main>
-        
-        <!-- СЕКЦИЯ: ОСТАТОК И СТОИМОСТЬ СКЛАДА -->
+        <!-- СЕКЦИЯ: ОСТАТОК -->
         <div id="sec-stock" class="section active">
-            <h2>> SELECT * FROM warehouse_summary;</h2>
-            
+            <h2>> WAREHOUSE SUMMARY (СИНХРОНИЗИРОВАНО)</h2>
             <div class="stats-grid">
                 <div class="stat-card">
-                    <h4>ОБЩАЯ СТОИМОСТЬ СКЛАДА</h4>
-                    <p id="total-warehouse-val">0 UZS</p>
+                    <h4>СТОИМОСТЬ СКЛАДА</h4>
+                    <p id="total-val">0 UZS</p>
                 </div>
                 <div class="stat-card">
-                    <h4>ВСЕГО ПОЗИЦИЙ</h4>
-                    <p id="total-positions">0</p>
-                </div>
-                <div class="stat-card">
-                    <h4>ОБЩЕЕ КОЛ-ВО МАТЕРИАЛОВ</h4>
-                    <p id="total-count">0 шт</p>
+                    <h4>ПОЗИЦИЙ</h4>
+                    <p id="total-pos">0</p>
                 </div>
             </div>
 
-            <h2>> SELECT * FROM products_stock;</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Фото</th>
-                        <th>ID</th>
-                        <th>Наименование</th>
-                        <th>Категория</th>
-                        <th>Материал</th>
-                        <th>Закупка</th>
-                        <th>Продажа</th>
-                        <th>Остаток</th>
-                        <th>Действие</th>
-                    </tr>
-                </thead>
-                <tbody id="stock-table-body">
-                    <!-- Заполняется из JS -->
-                </tbody>
-            </table>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Фото</th>
+                            <th>Товар</th>
+                            <th>Категория</th>
+                            <th>Закупка</th>
+                            <th>Продажа</th>
+                            <th>Остаток</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-tbody"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- СЕКЦИЯ: ГОРЯЧИЕ ПРОДАЖИ -->
         <div id="sec-hot-sales" class="section">
-            <h2>> SELECT * FROM products WHERE is_hot_sale = TRUE;</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Фото</th>
-                        <th>Наименование</th>
-                        <th>Цена продажи</th>
-                        <th>Остаток</th>
-                        <th>Быстрая продажа</th>
-                    </tr>
-                </thead>
-                <tbody id="hot-table-body">
-                    <!-- Заполняется из JS -->
-                </tbody>
-            </table>
+            <h2>> HOT SALES</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Фото</th>
+                            <th>Товар</th>
+                            <th>Цена</th>
+                            <th>Остаток</th>
+                            <th>Быстрая продажа</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hot-tbody"></tbody>
+                </table>
+            </div>
         </div>
 
-        <!-- СЕКЦИЯ: ДОБАВЛЕНИЕ / РЕДАКТИРОВАНИЕ ТОВАРА -->
+        <!-- СЕКЦИЯ: ДОБАВЛЕНИЕ -->
         <div id="sec-add-product" class="section">
-            <h2>> INSERT / UPDATE product_catalog;</h2>
-            <form id="product-form" onsubmit="saveProduct(event)" style="max-width: 600px;">
-                <input type="hidden" id="prod-id">
-                
+            <h2>> INSERT PRODUCT TO CLOUD</h2>
+            <form onsubmit="saveToCloud(event)">
                 <div class="form-group">
-                    <label>Наименование товара / материала:</label>
-                    <input type="text" id="prod-name" placeholder="например: ЛДСП 18мм Белый" required>
+                    <label>Наименование материала:</label>
+                    <input type="text" id="p-name" required placeholder="например: ЛДСП 18мм Белый">
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Категория мебельная:</label>
-                        <select id="prod-category">
-                            <option value="Плитные материалы (ЛДСП/МДФ)">Плитные материалы (ЛДСП/МДФ)</option>
-                            <option value="Фурнитура и Петли">Фурнитура и Петли</option>
-                            <option value="Направляющие">Направляющие</option>
-                            <option value="Кромка и профили">Кромка и профили</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Тип материала:</label>
-                        <input type="text" id="prod-material" placeholder="ЛДСП, МДФ, Сталь, ПВХ">
-                    </div>
+                <div class="form-group">
+                    <label>Категория:</label>
+                    <select id="p-cat">
+                        <option value="Плитные материалы">Плитные материалы (ЛДСП/МДФ)</option>
+                        <option value="Фурнитура">Фурнитура и Петли</option>
+                        <option value="Направляющие">Направляющие</option>
+                        <option value="Кромка">Кромка и профили</option>
+                    </select>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Закупочная цена (сум):</label>
-                        <input type="number" id="prod-purchase" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Цена продажи (сум):</label>
-                        <input type="number" id="prod-selling" required>
-                    </div>
+                <div class="form-group">
+                    <label>Закупочная цена (сум):</label>
+                    <input type="number" id="p-buy" required>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Количество (остаток):</label>
-                        <input type="number" id="prod-qty" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Ссылка на фото (URL):</label>
-                        <input type="text" id="prod-img" placeholder="https://..." value="https://via.placeholder.com/50">
-                    </div>
+                <div class="form-group">
+                    <label>Цена продажи (сум):</label>
+                    <input type="number" id="p-sell" required>
                 </div>
-
-                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="prod-hot" style="width: auto;">
-                    <label for="prod-hot" style="margin:0;">Добавить в «Горячие продажи»</label>
+                <div class="form-group">
+                    <label>Количество (остаток):</label>
+                    <input type="number" id="p-qty" required>
                 </div>
-
-                <button type="submit" class="btn">> SAVE_TO_DATABASE()</button>
+                <div class="form-group">
+                    <label>Ссылка на фото (URL):</label>
+                    <input type="text" id="p-img" placeholder="https://..." value="https://via.placeholder.com/80">
+                </div>
+                <div class="form-group" style="flex-direction:row; gap:10px;">
+                    <input type="checkbox" id="p-hot" style="width:auto;">
+                    <label for="p-hot" style="margin:0;">В «Горячие продажи»</label>
+                </div>
+                <button type="submit" class="btn">> СОХРАНИТЬ В ОБЛАКО</button>
             </form>
         </div>
 
         <!-- СЕКЦИЯ: ПРОДАЖА -->
         <div id="sec-sales" class="section">
-            <h2>> EXECUTE PROCEDURE process_sale();</h2>
-            <form onsubmit="processSale(event)" style="max-width: 500px;">
+            <h2>> EXECUTE SALE</h2>
+            <form onsubmit="processSale(event)">
                 <div class="form-group">
-                    <label>Выберите мебельный товар:</label>
-                    <select id="sale-prod-id" required></select>
-                </div>
-                <div class="form-group">
-                    <label>Выберите клиента:</label>
-                    <select id="sale-client-id" required></select>
+                    <label>Выберите товар:</label>
+                    <select id="sale-prod-select"></select>
                 </div>
                 <div class="form-group">
                     <label>Количество к продаже:</label>
                     <input type="number" id="sale-qty" min="1" value="1" required>
                 </div>
-                <button type="submit" class="btn">> REGISTER_SALE()</button>
+                <button type="submit" class="btn">> СПИСАТЬ СО СКЛАДА</button>
             </form>
         </div>
 
-        <!-- СЕКЦИЯ: КЛИЕНТСКАЯ БАЗА -->
+        <!-- СЕКЦИЯ: КЛИЕНТЫ -->
         <div id="sec-clients" class="section">
-            <h2>> SELECT * FROM clients_database;</h2>
-            <form onsubmit="addClient(event)" style="display: flex; gap: 10px; margin-bottom: 20px;">
-                <input type="text" id="client-name" placeholder="ФИО / Название цеха" required style="flex-grow: 1;">
-                <input type="text" id="client-phone" placeholder="Телефон" required>
-                <button type="submit" class="btn" style="margin: 0;">+ Добавить</button>
-            </form>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>ФИО / Компания</th>
-                        <th>Телефон</th>
-                        <th>Задолженность</th>
-                    </tr>
-                </thead>
-                <tbody id="clients-table-body">
-                    <!-- Заполняется из JS -->
-                </tbody>
-            </table>
+            <h2>> CLIENT DATABASE</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ФИО / Компания</th>
+                            <th>Телефон</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clients-tbody"></tbody>
+                </table>
+            </div>
         </div>
-
     </main>
 
-    <!-- Фиксированный брендинг внизу справа -->
     <div class="footer-branding">MUSTAFAYEV ACADEMY</div>
 
-    <!-- JavaScript: Базовый движок приложения -->
     <script>
-        // Инициализация начальных данных (Имитация SQL БД)
-        let db = {
-            products: JSON.parse(localStorage.getItem('tb_products')) || [
-                { id: 1, name: 'ЛДСП 18мм Белый Базовый', category: 'Плитные материалы (ЛДСП/МДФ)', material: 'ЛДСП', purchase: 140000, selling: 180000, qty: 45, img: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?w=100', isHot: true },
-                { id: 2, name: 'Петля накладная с доводчиком', category: 'Фурнитура и Петли', material: 'Сталь', purchase: 5000, selling: 8500, qty: 350, img: 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?w=100', isHot: true }
-            ],
-            clients: JSON.parse(localStorage.getItem('tb_clients')) || [
-                { id: 1, name: 'Мебельный цех "Мастер"', phone: '+998901234567', debt: 0 },
-                { id: 2, name: 'ИП Каримов', phone: '+998919876543', debt: 250000 }
-            ]
+        // CONFIG FIREBASE: Вставьте сюда данные из вашего бесплатного консоля Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyYourConfigHere...",
+            authDomain: "tabriz-sklad.firebaseapp.com",
+            databaseURL: "https://tabriz-sklad-default-rtdb.firebaseio.com",
+            projectId: "tabriz-sklad",
+            storageBucket: "tabriz-sklad.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abc123def456"
         };
 
-        function saveData() {
-            localStorage.setItem('tb_products', JSON.stringify(db.products));
-            localStorage.setItem('tb_clients', JSON.stringify(db.clients));
-            render();
-        }
+        // Инициализация базы данных
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
 
-        // Переключение меню
-        function showSection(sectionId) {
+        let productsData = {};
+
+        // Синхронизация данных с ОБЛАКОМ в реальном времени (на всех ПК и Телефонах)
+        db.ref('products').on('value', (snapshot) => {
+            productsData = snapshot.val() || {};
+            renderUI();
+        });
+
+        function showSection(id, event) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
-            
-            document.getElementById('sec-' + sectionId).classList.add('active');
+            document.getElementById('sec-' + id).classList.add('active');
             event.target.classList.add('active');
-            render();
         }
 
-        // Отрисовка данных на странице
-        function render() {
-            // 1. Отрисовка остатков склада
-            const stockBody = document.getElementById('stock-table-body');
-            const saleProdSelect = document.getElementById('sale-prod-id');
-            const hotBody = document.getElementById('hot-table-body');
-            
-            stockBody.innerHTML = '';
-            saleProdSelect.innerHTML = '';
-            hotBody.innerHTML = '';
+        function renderUI() {
+            const stockTbody = document.getElementById('stock-tbody');
+            const hotTbody = document.getElementById('hot-tbody');
+            const saleSelect = document.getElementById('sale-prod-select');
+
+            stockTbody.innerHTML = '';
+            hotTbody.innerHTML = '';
+            saleSelect.innerHTML = '';
 
             let totalVal = 0;
-            let totalItems = 0;
+            let count = 0;
 
-            db.products.forEach(p => {
-                totalVal += p.purchase * p.qty;
-                totalItems += Number(p.qty);
+            for (let key in productsData) {
+                let p = productsData[key];
+                totalVal += (p.buy * p.qty);
+                count++;
 
-                stockBody.innerHTML += `
+                stockTbody.innerHTML += `
                     <tr>
-                        <td><img src="${p.img}" class="img-preview" alt="photo"></td>
-                        <td>#${p.id}</td>
+                        <td><img src="${p.img}" class="img-preview"></td>
                         <td><b>${p.name}</b></td>
-                        <td>${p.category}</td>
-                        <td>${p.material}</td>
-                        <td>${p.purchase.toLocaleString()}</td>
-                        <td>${p.selling.toLocaleString()}</td>
+                        <td>${p.cat}</td>
+                        <td>${Number(p.buy).toLocaleString()}</td>
+                        <td>${Number(p.sell).toLocaleString()}</td>
                         <td style="color:${p.qty < 5 ? 'var(--warning-color)' : 'inherit'}"><b>${p.qty}</b></td>
-                        <td>
-                            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem;" onclick="editProduct(${p.id})">EDIT</button>
-                        </td>
                     </tr>
                 `;
 
-                saleProdSelect.innerHTML += `<option value="${p.id}">${p.name} (Остаток: ${p.qty} шт)</option>`;
+                saleSelect.innerHTML += `<option value="${key}">${p.name} (Ост: ${p.qty})</option>`;
 
-                if (p.isHot) {
-                    hotBody.innerHTML += `
+                if (p.hot) {
+                    hotTbody.innerHTML += `
                         <tr>
                             <td><img src="${p.img}" class="img-preview"></td>
                             <td><b>${p.name}</b></td>
-                            <td>${p.selling.toLocaleString()} UZS</td>
+                            <td>${Number(p.sell).toLocaleString()} UZS</td>
                             <td><b>${p.qty} шт</b></td>
-                            <td><button class="btn" onclick="quickSale(${p.id})">Продать 1 шт</button></td>
+                            <td><button class="btn" onclick="quickSale('${key}')" style="margin:0; padding:5px;">-1 шт</button></td>
                         </tr>
                     `;
                 }
-            });
+            }
 
-            document.getElementById('total-warehouse-val').innerText = totalVal.toLocaleString() + ' UZS';
-            document.getElementById('total-positions').innerText = db.products.length;
-            document.getElementById('total-count').innerText = totalItems + ' шт';
-
-            // 2. Отрисовка клиентов
-            const clientBody = document.getElementById('clients-table-body');
-            const saleClientSelect = document.getElementById('sale-client-id');
-            clientBody.innerHTML = '';
-            saleClientSelect.innerHTML = '';
-
-            db.clients.forEach(c => {
-                clientBody.innerHTML += `
-                    <tr>
-                        <td>#${c.id}</td>
-                        <td><b>${c.name}</b></td>
-                        <td>${c.phone}</td>
-                        <td style="color:${c.debt > 0 ? 'var(--warning-color)' : 'inherit'}">${c.debt.toLocaleString()} UZS</td>
-                    </tr>
-                `;
-                saleClientSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-            });
+            document.getElementById('total-val').innerText = totalVal.toLocaleString() + ' UZS';
+            document.getElementById('total-pos').innerText = count;
         }
 
-        // Сохранение / Добавление товара
-        function saveProduct(e) {
+        function saveToCloud(e) {
             e.preventDefault();
-            const id = document.getElementById('prod-id').value;
-            
-            const prodData = {
-                id: id ? Number(id) : Date.now(),
-                name: document.getElementById('prod-name').value,
-                category: document.getElementById('prod-category').value,
-                material: document.getElementById('prod-material').value,
-                purchase: Number(document.getElementById('prod-purchase').value),
-                selling: Number(document.getElementById('prod-selling').value),
-                qty: Number(document.getElementById('prod-qty').value),
-                img: document.getElementById('prod-img').value || 'https://via.placeholder.com/50',
-                isHot: document.getElementById('prod-hot').checked
+            const newKey = db.ref('products').push().key;
+            const data = {
+                name: document.getElementById('p-name').value,
+                cat: document.getElementById('p-cat').value,
+                buy: document.getElementById('p-buy').value,
+                sell: document.getElementById('p-sell').value,
+                qty: Number(document.getElementById('p-qty').value),
+                img: document.getElementById('p-img').value,
+                hot: document.getElementById('p-hot').checked
             };
 
-            if (id) {
-                const index = db.products.findIndex(p => p.id == id);
-                db.products[index] = prodData;
-            } else {
-                db.products.push(prodData);
-            }
-
-            document.getElementById('product-form').reset();
-            document.getElementById('prod-id').value = '';
-            saveData();
-            alert('Успешно сохранено!');
-        }
-
-        // Редактирование товара
-        function editProduct(id) {
-            const p = db.products.find(item => item.id === id);
-            if (!p) return;
-
-            document.getElementById('prod-id').value = p.id;
-            document.getElementById('prod-name').value = p.name;
-            document.getElementById('prod-category').value = p.category;
-            document.getElementById('prod-material').value = p.material;
-            document.getElementById('prod-purchase').value = p.purchase;
-            document.getElementById('prod-selling').value = p.selling;
-            document.getElementById('prod-qty').value = p.qty;
-            document.getElementById('prod-img').value = p.img;
-            document.getElementById('prod-hot').checked = p.isHot;
-
-            showSection('add-product');
-        }
-
-        // Добавление нового клиента
-        function addClient(e) {
-            e.preventDefault();
-            db.clients.push({
-                id: Date.now(),
-                name: document.getElementById('client-name').value,
-                phone: document.getElementById('client-phone').value,
-                debt: 0
+            db.ref('products/' + newKey).set(data, () => {
+                alert('Успешно добавлено в облако!');
+                e.target.reset();
             });
-            document.getElementById('client-name').value = '';
-            document.getElementById('client-phone').value = '';
-            saveData();
         }
 
-        // Оформление продажи
         function processSale(e) {
             e.preventDefault();
-            const pId = Number(document.getElementById('sale-prod-id').value);
+            const key = document.getElementById('sale-prod-select').value;
             const qty = Number(document.getElementById('sale-qty').value);
             
-            const prod = db.products.find(p => p.id === pId);
-            if (prod.qty < qty) {
-                alert(' Ошибка: На складе недостаточно товара!');
+            if (productsData[key].qty < qty) {
+                alert('Недостаточно товара!');
                 return;
             }
 
-            prod.qty -= qty;
-            saveData();
-            alert('Продажа успешно совершена!');
+            const newQty = productsData[key].qty - qty;
+            db.ref('products/' + key + '/qty').set(newQty);
+            alert('Продажа зарегистрирована!');
         }
 
-        // Быстрая продажа 1 шт из "Горячих"
-        function quickSale(id) {
-            const prod = db.products.find(p => p.id === id);
-            if (prod.qty < 1) {
-                alert('Товар закончился!');
-                return;
+        function quickSale(key) {
+            if (productsData[key].qty > 0) {
+                db.ref('products/' + key + '/qty').set(productsData[key].qty - 1);
             }
-            prod.qty -= 1;
-            saveData();
         }
-
-        // Первый запуск
-        render();
     </script>
 </body>
 </html>
